@@ -1,0 +1,20 @@
+---
+- name: ensure firewalld is installed
+  yum:
+    name: firewalld
+    state: latest
+
+- name: ensure firewalld is started and enabled
+  service:
+    name: firewalld
+    state: started
+    enabled: true
+
+- name: ensure firewalld services are enabled
+  firewalld:
+    state: enabled
+    immediate: true
+    permanent: true
+    service: "{{ item }}"
+  loop: "{{ firewall_services }}"
+...

@@ -1,0 +1,20 @@
+---
+# this is sampel playbook with multiple plays
+
+- name : First play
+  hosts: serverc
+  tasks:
+    - name: first task
+      yum: 
+        name: httpd
+        status: present
+
+    - name: second task
+      yum: 
+        name: second task
+        service: 
+          name: httpd
+          enabled: true
+
+- name: second play
+  hosts: serverd

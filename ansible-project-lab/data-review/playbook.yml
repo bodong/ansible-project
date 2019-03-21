@@ -1,0 +1,82 @@
+---
+- name: install and configure webserver with basic auth
+  hosts: webserver
+  vars:
+    firewall_pkg: firewalld
+    web_pkg: httpd
+    web_svc: httpd
+    ssl_pkg: mod_ssl
+    python_pkg: python-passlib
+    httpdconf_src: files/httpd.conf
+    httpdconf_file: /etc/httpd/conf/httpd.conf
+    htaccess_src: files/.htaccess
+    secrets_dir: /etc/httpd/secrets
+    secrets_file: "{{ secrets_dir }}/htpasswd"
+    web_root: /var/www/html
+    web_user: guest
+  vars_files:
+    - vars/secret.yml
+  tasks:
+    - name: latest version of necessary package installed
+      yum:
+        name: ["{{ firewall_pkg }}", "{{ web_pkg }}", "{{ ssl_pkg }}", "{{ python_pkg }}"]
+        state: latest
+   
+    - name: configure web service
+      copy: 
+        src: "{{ httpdconf_src }}"
+        dest: "{{ httpdconf_file }}"
+        owner: root
+        group: root
+        mode: 0644
+   
+    - name: secret directory exist
+      file:
+        path: "{{ secrets_dir }}"
+        state: directory
+        owner: apache
+        group: apache
+        mode: 0500
+   
+    - name: web user exists in secrets file
+      htpasswd:
+        path: "{{ secrets_file }}"
+        name: "{{ web_user }}"
+        password: "{{ web_pass }}"
+        owner: apache
+        group: apache
+        mode: 0400
+
+    - name: .htaccess file installed in docroot
+      copy: 
+        src: "{{ htaccess_src }}"
+        dest: "{{ web_root }}/.htaccess"
+        owner: apache
+        group: apache
+        mode: 0400
+     
+    - name: create index.html
+      copy:
+        content: "{{ ansible_facts['fqdn']}} ({{ ansible_facts['default_ipv4']['address']}}) has been customized by Ansible.\n"
+        dest: "{{ web_root }}/index.html"
+
+    - name: open the port for the web server
+      firewalld:
+        service: https
+        state: enabled
+        immediate: true
+        permanent: true
+
+    - name: web service enabled and restarted
+      service: 
+        name: "{{ web_svc }}" 
+        state: restarted
+        enabled: true
+
+    - name: firewall service enable and restarted
+      service: 
+        name: firewalld
+        state: restarted
+        enabled: true
+      
+

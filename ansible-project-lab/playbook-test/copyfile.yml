@@ -1,0 +1,13 @@
+---
+- name: copy motd
+  hosts: servera
+  become: true
+  user: devops
+  tasks:
+    - debug:
+        msg: Hello World
+    - name: copy content to /etc/motd
+      copy:
+        content: "Test data copy"
+        dest: /etc/motd
+...

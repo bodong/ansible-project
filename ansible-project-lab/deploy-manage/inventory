@@ -1,0 +1,9 @@
+[myself]
+localhost
+
+[intranetweb]
+servera
+
+[everyone:children]
+myself
+intranetweb

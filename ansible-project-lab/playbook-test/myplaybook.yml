@@ -1,0 +1,14 @@
+---
+- name: First play
+  hosts: servera
+  tasks:
+    - debug:
+        msg: Hello World
+    - debug: 
+        msg: This is first playbook
+- name: second play
+  hosts: serverb
+  tasks:
+    - debug:
+        msg: Second play
+...

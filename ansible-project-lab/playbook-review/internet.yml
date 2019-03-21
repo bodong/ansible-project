@@ -1,0 +1,51 @@
+---
+- name: enable internet services
+  hosts: serverb.lab.example.com
+  become: yes
+  tasks:
+    - name: check the latest version of required packages
+      yum:
+        name: [ firewalld, httpd, mariadb-server, php, php-mysql]
+        state: latest
+
+    - name: check firewalld is enabled and running
+      service:
+        name: firewalld
+        enabled: true
+        state: started
+
+    - name: check firewalld permits http service
+      firewalld: 
+        service: http
+        permanent: true
+        state: enabled
+        immediate: yes
+
+    - name: check httpd is enabled and running
+      service: 
+        name: httpd
+        enabled: true
+        state: started
+
+    - name: check mariadb is enabled and running
+      service:
+        name: mariadb
+        enabled: true
+        state: started
+
+    - name: verify the php page is installed
+      get_url:
+        url: "http://materials.example.com/labs/playbook-review/index.php"
+        dest: /var/www/html/index.php
+        mode: 0644
+
+
+- name: verify internet web server
+  hosts: localhost
+  become: no
+  tasks:
+    - name : connect to internet web server
+      uri: 
+        url : http://serverb.lab.example.com
+        status_code: 200
+  

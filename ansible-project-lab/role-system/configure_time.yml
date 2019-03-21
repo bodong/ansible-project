@@ -1,0 +1,19 @@
+---
+- name: time synchronization
+  hosts: database_servers
+
+  roles: [rhel-system-roles.timesync]
+  
+  post_tasks:
+    - name: set timezone
+      timezone:
+        name: "{{ host_timezone }}" 
+      notify: restart_crond
+  
+
+  handlers:
+    - name: restart_crond
+      service: 
+        name: crond
+        state: restarted
+...
