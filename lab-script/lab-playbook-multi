@@ -1,0 +1,132 @@
+#!/bin/bash
+#
+# Copyright 2017 Red Hat, Inc.
+#
+# NAME
+#     lab-playbook-multi - grading script for DO407 playbook practice
+#
+# SYNOPSIS
+#     lab-playbook {setup|grade|cleanup|solve|reset}
+#
+#        grade   - perform evaluation steps on the system
+#        cleanup - perform post-lab cleanup (not comprehensive like reset)
+#        solve   - do the lab exercise for the student (may call setup)
+#        reset   - avoid resetting a machine (not preferred)
+#        (ONLY INCLUDE PROVIDED COMMANDS, REMOVE REST)
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does setup, grading,
+#     cleanup, reset, or solve for the particular lab of awesomeness.
+#
+# CHANGELOG
+#   * Thu Oct 25 2018 Dan Kolepp <dkolepp@redhat.com>
+#   - New standard is for GEs to only support setup/cleanup
+#   - Removing solve/grade verbs.
+#   - Renamed from lab-playbook to lab-playbook-multi
+#     to conform with GLS standard.
+#   - Lab materials are put in working directory under
+#     /home/student/<lab-name>
+#   * Wed Jul 12 2017 Artur Glogowski <aglogows@redhat.com>
+#   - solve part added
+#   * Tue Apr 12 16:51:14 EDT 2016 Chen Chang <cchang@redhat.com>
+#   - New script
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+run_as_root='true'
+targetw='workstation'
+targeta='servera'
+targetb='serverb'
+
+labname=playbook-multi
+
+lab_dir='/home/student/${labname}'
+ansible_cfg="${lab_dir}/ansible.cfg"
+ansible_inventory="${lab_dir}/inventory"
+playbook="${lab_dir}/intranet.yml"
+url='http://servera.lab.example.com'
+
+# This defines which subcommands are supported (solve, reset, etc.).
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(setup cleanup)
+
+function lab_setup {
+
+  target=${targetw}
+
+  reqd_package='ansible'        # Just an example
+
+  echo
+  echo "Setting up ${target} for lab exercise work:"
+  echo
+  host_reachable ${targeta}
+
+  #From labtool.do407.shlib
+  #Check Ansible is installed.
+  setup_check_ansible $target
+
+  #From labtool.do407.shlib
+  #Create working directory for lab artifacts.
+  setup_create_lab_dir $labname
+
+  #From labtool.do407.shlib
+  #Download Ansible Inventory
+  setup_download_inventory_file $labname
+
+  #From labtool.do407.shlib
+  #Download ansible.cfg
+  setup_download_ansible_cfg $labname
+
+  #pad ' · Deploying intranet.yml playbook'
+  ##From labtool.do407.shlib
+  #_download_file intranet.yml $labname
+
+  echo
+}
+
+
+function lab_cleanup() {
+
+  target=${targeta}
+
+  print_line 'Cleanup'
+
+  pad " · Remove firewall configuration"
+
+  cmd1="firewall-cmd --remove-service http --permanent"
+  cmd2="firewall-cmd --reload"
+
+  ${ssh} ${target} "${cmd1} && ${cmd2}" &> /dev/null
+  print_SUCCESS
+
+
+  pad " · Remove web content"
+
+  cmd1="rm -f /var/www/html/index.html"
+
+  ${ssh} ${target} ${cmd1} &> /dev/null
+  print_SUCCESS
+
+  echo
+
+
+  pad " · Remove httpd package"
+
+  cmd1="yum remove -y httpd"
+
+  ${ssh} ${target} ${cmd1} &> /dev/null
+  print_SUCCESS
+
+  echo
+}
+  
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

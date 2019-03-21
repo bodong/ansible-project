@@ -1,0 +1,97 @@
+#!/bin/bash
+#
+# Copyright 2018 Red Hat, Inc.
+#
+# NAME
+#     lab-deploy-inventory - grading script for DO407
+#
+# SYNOPSIS
+#     lab-deploy-inventory {setup | cleanup}
+#
+#        setup   - prepare the system for starting the lab
+#        cleanup - perform post-lab cleanup
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does setup or
+#     cleanup for a DO407 lab.
+#
+# CHANGELOG
+#   * Wed Oct 24 2018 Victor Costea <vcostea@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+run_as_root='true'
+targetw='workstation'
+targeta='servera'
+targetb='serverb'
+targetc='serverc'
+targetd='serverd'
+ansible_hosts_file='/etc/ansible/hosts'
+
+# This defines which subcommands are supported (setup, grade, etc.).
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(setup cleanup)
+
+function lab_setup {
+
+  control_node=${targetw}
+  reqd_package='ansible'
+
+  print_header "Setting up ${control_node} for lab exercise work:"
+  host_reachable ${targeta}
+  host_reachable ${targetb}
+  host_reachable ${targetc}
+  host_reachable ${targetd}
+
+  # Check for lab prerequisites.
+  pad " . Verify ${reqd_package} is installed on ${control_node} control node"
+  if rpm -q --quiet ${reqd_package}
+  then
+    print_SUCCESS
+  else
+    if yum install -y ${reqd_package} # &> /dev/null
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  # Backup ansible hosts file
+  pad " . Backup ${ansible_hosts_file} inventory"
+  if [[ -s ${ansible_hosts_file} ]]; then
+    cp ${ansible_hosts_file}{,.orig}
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  print_line
+}
+
+function lab_cleanup {
+
+  
+  control_node=${targetw}
+
+  print_header "Cleanup ${control_node} control node"
+  pad " . Restore ${ansible_hosts_file}"
+  if [[ -s ${ansible_hosts_file}.orig ]]; then
+    mv ${ansible_hosts_file}{.orig,}
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  print_line
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

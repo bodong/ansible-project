@@ -1,0 +1,142 @@
+#!/bin/bash
+#
+# Copyright 2018 Red Hat, Inc.
+#
+# NAME
+#     lab-system-users - setup script for DO407 Software Administration
+#                          practice exercise
+#
+# SYNOPSIS
+#     lab-admin-software {setup|cleanup}
+#
+#        setup   - create working directory with inventory and templates
+#        cleanup - remove changes applied to managed hosts
+#
+# DESCRIPTION
+#     This script creates a playbook project populated with an
+#     ansible.cfg file, inventory file.
+#
+#    
+#
+# CHANGELOG
+#   * Wed Dec 19 2018 Artur Glogowski <aglogows@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+run_as_root='true'
+runuser='runuser student -c'
+
+control_node='workstation'
+
+# Conditional to make the script compatible with the
+# demo version.
+if [[ ${lab_demo_mode} == "demo" ]]; then
+  env="demo"
+else
+  env="dev"
+fi
+
+labname="system-users"
+working_dir="/home/student/${labname}"
+ansible_cfg_file="${working_dir}/ansible.cfg"
+ansible_hst_file="${working_dir}/inventory"
+ansible_playbook_file="${working_dir}/users.yml"
+vars_file="${working_dir}/users_vars.yml"
+ansible_user='devops'
+ansible_target='servera.lab.example.com'
+
+file_list=(cleanup.yml users_vars.yml)
+
+materials='http://materials.example.com'
+
+declare -a valid_commands=(setup cleanup)
+
+function lab_setup {
+
+
+  print_header "Setting up ${control_node} for Guided Exercise ($labname):"
+
+  #From labtool.do407.shlib
+  #Check Ansible is installed.
+  setup_check_ansible workstation
+
+  #From labtool.do407.shlib
+  #Create working directory for lab artifacts.
+  setup_create_lab_dir $labname
+
+  #From labtool.do407.shlib
+  #Download Ansible Inventory
+  setup_download_inventory_file $labname
+
+  #From labtool.do407.shlib
+  #Download ansible.cfg
+  setup_download_ansible_cfg $labname
+
+
+  for file in ${file_list[@]}
+  do
+      pad " · Downloading $file file"
+      _download_file $file $labname
+  done
+
+  pad ' . Creating subdirectories'
+  mkdir ${working_dir}/files
+  mkdir ${working_dir}/vars
+  if [ $? -eq 0 ];
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+  fi
+
+  pad ' . Moving the variables file into place'
+  mv ${working_dir}/users_vars.yml ${working_dir}/vars
+  if [ $? -eq 0 ];
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+  fi
+  
+  pad ' . Copying ssh keys'
+  cp /home/student/.ssh/lab_rsa.pub ${working_dir}/files
+  mv ${working_dir}/files/lab_rsa.pub ${working_dir}/files/user1.key.pub
+  cp ${working_dir}/files/user1.key.pub ${working_dir}/files/user2.key.pub
+  cp ${working_dir}/files/user1.key.pub ${working_dir}/files/user3.key.pub
+  cp ${working_dir}/files/user1.key.pub ${working_dir}/files/user4.key.pub
+  cp ${working_dir}/files/user1.key.pub ${working_dir}/files/user5.key.pub
+  chown student:student -R ${working_dir}
+  if [ $? -eq 0 ];
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+  fi
+
+
+}
+
+
+
+function lab_cleanup {
+
+  print_header "Cleaning up for Guided Exercise ($labname):"
+
+  host_reachable ${ansible_target}
+
+  pad ' · Running a cleanup playbook'
+  run_a_playbook $labname cleanup.yml
+
+  echo
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

@@ -1,0 +1,133 @@
+#!/bin/bash
+#
+# Copyright 2016 Red Hat, Inc.
+#
+# NAME
+#     lab-creating-roles - grading script for DO407 roles practice exercise
+#
+# SYNOPSIS
+#     lab-creating-roles {setup|grade|solve|cleanup|reset}
+#
+#        setup   - create working directory with inventory and templates
+#        cleanup - remove changes applied to managed hosts
+#
+# DESCRIPTION
+#     This script is used to confirm if a student has created two Ansible
+#     roles - one configures an Apache virtual host and the other opens
+#     a service port in the firewall. The virtual host role depends upon
+#     the firewall role to open its port.
+#
+# CHANGELOG
+#   * Fri May 27 2016 George Hacker <ghacker@redhat.com>
+#   - do not require firewalld to be preinstalled on servera
+#   * Wed May 18 2016 George Hacker <ghacker@redhat.com>
+#   - lab_setup provides student with a working config and inventory
+#   * Thu Apr 14 2016 George Hacker <ghacker@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+run_as_root='true'
+runuser='runuser student -c'
+
+control_node='workstation'
+
+# Conditional to make the script compatible with the
+# demo version.
+if [[ ${lab_demo_mode} == "demo" ]]; then
+  env="demo"
+else
+  env="dev"
+fi
+
+labname="role-create"
+working_dir="/home/student/${labname}"
+ansible_cfg_file=${working_dir}/ansible.cfg
+ansible_hst_file=${working_dir}/inventory
+ansible_playbook_file=${working_dir}/use-vhost-role.yml
+ansible_user=devops
+ansible_target=servera.lab.example.com
+
+file_list='vhost.conf.j2'
+
+declare -a valid_commands=(setup cleanup)
+
+function lab_setup {
+
+  print_line
+  print_line "Setting up ${control_node} for Guided Exercise ($labname):"
+  print_line
+
+  #From labtool.do407.shlib
+  #Check Ansible is installed.
+  setup_check_ansible workstation
+
+  #From labtool.do407.shlib
+  #Create working directory for lab artifacts.
+  setup_create_lab_dir $labname
+
+  #From labtool.do407.shlib
+  #Download Ansible Inventory
+  setup_download_inventory_file $labname
+
+  #From labtool.do407.shlib
+  #Download ansible.cfg
+  setup_download_ansible_cfg $labname
+
+  for file in ${file_list}
+  do
+      pad " · Downloading $file file"
+      _download_file $file $labname
+  done
+
+  echo
+}
+
+
+function lab_cleanup {
+
+  print_line
+  print_line "Cleaning up for Guided Exercise ($labname):"
+  print_line
+
+
+  host_reachable ${ansible_target}
+
+  pad ' · Removing vhost config file and directory'
+  cmd1='rm -rf /var/www/vhosts /etc/httpd/conf.d/vhost.conf'
+  if ${ssh} ${ansible_target} "${cmd1}" &> /dev/null
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+  pad ' · Erasing httpd package'
+  cmd1='yum erase -y httpd'
+  if ${ssh} ${ansible_target} "${cmd1}" &> /dev/null
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+ pad ' · Closing http firewall port'
+ cmd1='firewall-cmd --remove-service http'
+ cmd2="${cmd1} --permanent"
+ if ${ssh} ${ansible_target} "${cmd1} && ${cmd2}" &> /dev/null
+ then
+   print_SUCCESS
+ else
+   print_FAIL
+ fi
+  echo
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

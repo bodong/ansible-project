@@ -1,0 +1,190 @@
+#!/bin/bash
+#
+# Copyright 2016 Red Hat, Inc.
+#
+# NAME
+#     lab-file-review - grading script for DO407 Deploying files to managed hosts (Lab)
+#
+# SYNOPSIS
+#     lab-file-review {setup|grade|cleanup}
+#
+#        setup   - prepare the system for starting the lab
+#        grade   - perform evaluation steps on the system
+#        cleanup - perform post-lab cleanup (not comprehensive like reset)
+#
+# DESCRIPTION
+#     This script setup verb creates the file-review working directory, and downloads the files
+#     used during the lab to the files subdirectory. It grades based on the presence of the correct
+#     /etc/motd on serverb. The cleanup verb sets the /etc/motd back to its original state on serverb.
+#
+# CHANGELOG
+#   * Tue  4 2018 Victor Costea <vcostea@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+run_as_root='true'
+targeta='servera'
+targetw='workstation'
+
+labname='file-review'
+student_home_dir='/home/student'
+lab_dir="${student_home_dir}/${labname}"
+lab_cfg="${labname}/ansible.cfg"
+lab_inv="${labname}/files/inventory"
+
+ansible_j2template_file=motd.j2
+ansible_playbook_file=motd.yml
+ansible_config_file=ansible.cfg
+ansible_inventory_file=inventory
+#ansible_user=devops
+ansible_target=serverb.lab.example.com
+
+# This defines which subcommands are supported (solve, reset, etc.).
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(setup grade cleanup)
+
+function lab_setup {
+
+  reqd_package='ansible'
+
+  host_reachable ${targeta}
+  host_reachable ${targetw}
+
+  print_header "Setting up ${targetw} for lab exercise work:"
+
+  # Check for lab prerequisites.
+  pad " . The ${reqd_package} package is installed on ${targetw}"
+  if rpm -q --quiet ${reqd_package}
+  then
+    print_SUCCESS
+  else
+    if yum install -y ${reqd_package}
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  pad " . Creating the working directory"
+  if ! [ -d "${lab_dir}" ]; then
+    mkdir -p ${lab_dir}/files
+    chown -R student.student ${lab_dir}
+    print_SUCCESS
+  elif [ -d "${lab_dir}" ]; then
+      print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad " . Downloading ${ansible_config_file}"
+  if wget http://materials.example.com/labs/${lab_cfg} -O ${lab_dir}/${ansible_config_file}; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad " . Downloading ${ansible_inventory_file}"
+  if wget http://materials.example.com/labs/${labname}/${ansible_inventory_file} -O ${lab_dir}/files/${ansible_inventory_file}; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad " . Downloading ${ansible_j2template_file}"
+  if wget http://materials.example.com/labs/${labname}/${ansible_j2template_file} -O ${lab_dir}/files/${ansible_j2template_file} &>/dev/null; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad " . Downloading ${ansible_playbook_file}"
+  if wget http://materials.example.com/labs/${labname}/${ansible_playbook_file} -O ${lab_dir}/files/${ansible_playbook_file} &>/dev/null; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad " . Changing permissions to the working directory"
+  chown -R student. ${lab_dir}
+  print_SUCCESS
+
+  print_line
+}
+
+function lab_grade {
+
+  host_reachable ${targeta}
+  host_reachable ${targetw}
+
+  print_line "Grading the student's work on ${targetw}:"
+
+  pad " . Ensuring Ansible inventory file is present"
+  if stat ${lab_dir}/${ansible_inventory_file}; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad " . Ensuring motd.j2 file is present"
+  if stat ${lab_dir}/${ansible_j2template_file}; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad " . Ensuring Ansible playbook is present"
+  if stat ${lab_dir}/${ansible_playbook_file}; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+  
+  print_header "Grading the student's work on ${ansible_target}:"
+
+  pad " . Checking motd"
+  cmd1=$(${ssh} ${ansible_target} cat /etc/motd| grep -Eo '[0-9]{0,9}'|wc -l)
+  if [[ ${cmd1} -eq 0 ]]; then
+      print_FAIL
+  else
+      print_PASS
+  fi
+
+  # Overall grade
+  print_line
+  pad 'Overall lab grade'
+  if [[ ${fail_count} -eq 0 ]]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  print_line
+}
+
+function lab_cleanup {
+
+  host_reachable ${targetw}
+
+  print_header "Cleaning up the lab on ${targetw}:"
+
+  pad " . Removing motd on ${ansible_target}"
+  if ${ssh} ${ansible_target} "rm -f /etc/motd;touch /etc/motd"; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  print_line
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

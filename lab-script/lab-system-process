@@ -1,0 +1,96 @@
+#!/bin/bash
+#
+# Copyright 2018 Red Hat, Inc.
+#
+# NAME
+#     lab-system-process - setup script for DO407 Admin Boot and Scheduled 
+#                         Processes practice exercise
+#
+# SYNOPSIS
+#     lab-system-process {setup|cleanup}
+#
+#        setup   - create working directory with ansible.cfg and inventory
+#        cleanup - remove changes applied to managed hosts
+#
+# DESCRIPTION
+#     This script creates a playbook project populated with an
+#     ansible.cfg file and inventory file. 
+#
+# CHANGELOG
+#   * Tue Dec 18 2018 Victor Costea <vcostea@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+run_as_root='true'
+runuser='runuser student -c'
+
+control_node='workstation'
+
+labname="system-process"
+working_dir="/home/student/${labname}"
+ansible_cfg_file="${working_dir}/ansible.cfg"
+ansible_hst_file="${working_dir}/inventory"
+ansible_target='servera.lab.example.com'
+
+#file_list=(storage.yml storage_vars.yml)
+
+materials='http://materials.example.com'
+
+declare -a valid_commands=(setup cleanup)
+
+function lab_setup {
+
+
+  print_line
+  print_line "Setting up ${control_node} for Guided Exercise ($labname):"
+  print_line
+
+  #From labtool.do407.shlib
+  #Check Ansible is installed.
+  setup_check_ansible workstation
+
+  #From labtool.do407.shlib
+  #Create working directory for lab artifacts.
+  setup_create_lab_dir $labname
+
+  #From labtool.do407.shlib
+  #Download Ansible Inventory
+  setup_download_inventory_file $labname
+
+  #From labtool.do407.shlib
+  #Download ansible.cfg
+  setup_download_ansible_cfg $labname
+
+#  for file in ${file_list[@]}
+#  do
+#      pad " · Downloading $file file"
+#      _download_file $file $labname
+#  done
+
+  print_line
+}
+
+
+
+function lab_cleanup {
+
+  print_header "Cleaning up for Guided Exercise ($labname):"
+
+  host_reachable ${ansible_target}
+
+  pad ' · Running a cleanup playbook'
+  run_a_playbook $labname cleanup.yml
+  
+  print_line
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

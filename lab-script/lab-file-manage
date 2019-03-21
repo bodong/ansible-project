@@ -1,0 +1,124 @@
+#!/bin/bash
+#
+# Copyright 2018 Red Hat, Inc.
+#
+# NAME
+#     lab-file-manage - grading script for DO407 file manage practice
+#
+# SYNOPSIS
+#     lab-file-manage {setup|cleanup))
+#
+#        setup   - prepare the system for starting the lab
+#        cleanup - perform post-lab cleanup
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does setup, or
+#     cleanup for the file manage guided exercise.
+#
+# CHANGELOG
+#   * Nov 16 2018 Victor Costea <vcostea@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+run_as_root='true'
+targetw='workstation'
+targeta='servera'
+
+labname='file-manage'
+student_home_dir='/home/student'
+lab_dir="${student_home_dir}/${labname}"
+lab_cfg="${labname}/ansible.cfg"
+lab_inv="${labname}/inventory"
+
+# This defines which subcommands are supported (setup, grade, etc.).
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(setup cleanup)
+
+function lab_setup {
+
+  control_node=${targetw}
+  target=${targetw}
+
+  # Check for lab prerequisites.
+
+  reqd_package='ansible tree'
+
+  print_header "Setting up ${control_node} for lab exercise work:"
+  host_reachable ${control_node}
+
+  pad " . Installing the ansible and tree packages on ${control_node}"
+  if rpm -q --quiet ${reqd_package}
+  then
+    print_SUCCESS
+  else
+    if yum install -y ${reqd_package} &> /dev/null
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  pad " . Create exercise directory"
+  if ! [ -d "${lab_dir}" ]; then
+    mkdir -p ${lab_dir}/files
+    chown -R student.student ${lab_dir}
+    print_SUCCESS
+  elif [ -d "${lab_dir}" ]; then
+      print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad " . Create exercise files"
+  if ! [ -f "${lab_dir}/files/users.txt" ]; then
+    touch "${lab_dir}/files/users.txt"
+    chown -R student.student ${lab_dir}/files
+    print_SUCCESS
+  elif [ -f "${lab_dir}/files/users.txt" ]; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad " . Download Ansible configuration"
+  cmd1="curl http://materials.example.com/labs/${lab_cfg} > ${lab_cfg}"
+  if su - student -c "${ssh} ${targetw} '${cmd1}'" &> /dev/null
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad " . Download Ansible inventory"
+  cmd1="curl http://materials.example.com/labs/${lab_inv} > ${lab_inv}"
+  if su - student -c "${ssh} ${targetw} '${cmd1}'" &> /dev/null
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  print_line
+}
+
+function lab_cleanup {
+
+  target=${targetw}
+
+  print_header "Cleaning up the lab on ${targetw}:"
+  pad ' . Cleaning'
+  print_SUCCESS
+
+  print_line
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

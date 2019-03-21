@@ -1,0 +1,220 @@
+#!/bin/bash
+#
+# Copyright 2018 Red Hat, Inc.
+#
+# NAME
+#     lab-projects-review - grading script for DO407
+#
+# SYNOPSIS
+#     lab-projects-review {setup | cleanup | grade}
+#
+#        setup   - prepare the system for starting the lab
+#        cleanup - perform post-lab cleanup
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does setup or
+#     cleanup for a DO407 lab.
+#
+# CHANGELOG
+#   * Mon Dec 10 2018 Chen Chang <cchang@redhat.com>
+#   - Update for 2.7 release
+#   * Wed Oct 24 2018 Victor Costea <vcostea@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+labname='projects-review'
+run_as_root='true'
+target='workstation'
+working_dir=/home/student/${labname}
+inv_dir=${working_dir}/inventory
+file_dir=${working_dir}/files
+ansible_playbook_file=${working_dir}/playbook.yml
+dyn_inv_file=${inv_dir}/inventory.py
+web_task_file=${working_dir}/tasks/web_tasks.yml
+firewall_task_file=${working_dir}/tasks/firewall_tasks.yml
+ansible_pkgs=(firewalld httpd)
+
+# This defines which subcommands are supported (setup, grade, etc.).
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(setup cleanup grade)
+
+function lab_setup {
+
+  control_node=${target}
+
+  print_header "Setting up ${control_node} for lab exercise work:"
+
+  #From labtool.do407.shlib
+  #Check Ansible is installed.
+  setup_check_ansible ${target}
+
+  #From labtool.do407.shlib
+  #Create working directory for lab artifacts.
+  setup_create_lab_dir $labname
+
+  #From labtool.do407.shlib
+  #Download ansible.cfg
+  setup_download_ansible_cfg $labname
+
+  pad ' · Creating inventory directory'
+  mkdir -p ${inv_dir}
+  chown -R student. ${inv_dir}
+  print_SUCCESS
+               
+  pad ' · Deploying inventory script'
+  ##From labtool.do407.shlib
+  _download_file inventory/inventory.py $labname
+
+  pad ' · Creating files directory'
+  mkdir -p ${file_dir}
+  chown -R student. ${file_dir}
+  print_SUCCESS
+
+  pad ' · Deploying play files'
+  ##From labtool.do407.shlib
+  _download_file files/tune.conf $labname
+
+  pad ' · Deploying playbook'
+  ##From labtool.do407.shlib
+  _download_file playbook.yml $labname
+
+  print_line
+}
+
+function lab_cleanup {
+
+  for target in servera serverb serverc serverd; do
+    print_header "Cleaning up the lab on ${target}:"
+    host_reachable ${target}
+  
+    print_line "Cleanup" 
+    pad " · Remove firewall configuration"
+    cmd1="firewall-cmd --remove-service http --permanent"
+    cmd2="firewall-cmd --reload"
+    ${ssh} ${target} "${cmd1} && ${cmd2}"
+    print_SUCCESS
+  
+  
+    pad " · Remove web content"
+    cmd1="rm -f /etc/httpd/conf.d/tune.conf"
+    ${ssh} ${target} ${cmd1}
+    print_SUCCESS
+  
+  
+    pad " · Remove httpd package"
+    cmd1="yum remove -y httpd"
+    ${ssh} ${target} ${cmd1} &> /dev/null
+    print_SUCCESS
+  done
+
+  print_line
+}
+
+function lab_grade {
+
+  host_reachable ${ansible_target}
+
+  print_header "Grading the student's work on ${control_node}:"
+
+
+  pad " · Ensuring Ansible playbook is present"
+  if [[ -f ${ansible_playbook_file} ]]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad " · Ensuring web task file is present"
+  if [[ -f ${web_task_file} ]]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad " · Ensuring firewall task file is present"
+  if [[ -f ${firewall_task_file} ]]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad " · Ensuring dynamic inventory script is executable"
+  if [[ -x ${dyn_inv_file} ]]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  if grep "serial:[[:space:]]2" ${ansible_playbook_file}; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  for ansible_target in servera serverb serverc serverd; do
+    print_header "Grading the student's work on ${ansible_target}:"
+  
+  
+    print_line " · Checking packages"
+  
+    for i in "${ansible_pkgs[@]}"; do
+      pad "   · Checking $i"
+      if ${ssh} ${ansible_target} rpm -q --quiet "$i"; then
+        print_PASS
+      else
+        print_FAIL
+      fi
+    done
+  
+    print_line " · Ensuring services are started"
+    daemons=(httpd firewalld)
+    for i in "${daemons[@]}"; do
+      pad "   · Checking $i"
+      if ${ssh} ${ansible_target} systemctl is-active $i; then
+        print_PASS
+      else
+        print_FAIL
+      fi
+    done
+  
+    pad "   · Checking for Apache tune.conf"
+    if ${ssh} ${ansible_target} test -f /etc/httpd/conf.d/tune.conf; then
+      print_PASS
+    else
+      print_FAIL
+    fi
+
+    print_line
+  
+    pad " · Ensuring the web server is reachable"
+    if curl --silent http://${ansible_target}; then
+      print_PASS
+    else
+      print_FAIL
+    fi
+  done
+
+  print_line
+
+  # Overall grade
+  print_line
+  pad 'Overall lab grade'
+  if [[ ${fail_count} -eq 0 ]]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  print_line
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

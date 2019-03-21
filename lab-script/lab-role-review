@@ -1,0 +1,291 @@
+#!/bin/bash
+#
+# Copyright 2016 Red Hat, Inc.
+#
+# NAME
+#     lab-ansible-roles-lab - grading script for DO407 Ansible roles lab
+#
+# SYNOPSIS
+#     lab-ansible-roles-lab {setup|grade|solve|cleanup|reset}
+#
+#        setup   - create working directory with inventory and templates
+#        grade   - perform lab evaluation steps
+#        solve   - do the lab exercise for the student
+#        cleanup - remove changes applied to serverb and tower hosts
+#        reset   - same as cleanup + remove Ansible files on workstation
+#
+# DESCRIPTION
+#     This script is used to confirm if a student has created two Ansible
+#     roles - one customizes a user environment and the other configures
+#     an Apache webserver. The user environment role requires an argument
+#     that specifies which user to customize. The Apache role takes an
+#     optional argument that enables the web server when set to true.
+#
+# CHANGELOG
+#   * Mon Jun 26 2017 Artur Glogowski <aglogows@redhat.com>
+#   - moved the LAB from tower to serverc
+#   - removed code for patch/restore ansible-galaxy
+#   - added fix for ansible-galaxy missing directories
+#   * Wed Jun 21 2017 Artur Glogowski <aglogows@redhat.com>
+#   - added check for servera, serverb and serverc
+#   - fixed template creation  
+#   * Wed May 18 2016 George Hacker <ghacker@redhat.com>
+#   - added firewalld tasks in apache role
+#   - lab_setup provides student with a working config and inventory
+#   * Thu May  5 2016 George Hacker <ghacker@redhat.com>
+#   - added code to patch/restore ansible-galaxy
+#   * Thu Apr 14 2016 George Hacker <ghacker@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+run_as_root='true'
+runuser='runuser student -c'
+
+control_node='workstation'
+
+# Conditional to make the script compatible with the
+# demo version.
+if [[ ${lab_demo_mode} == "demo" ]]; then
+  env="demo"
+else
+  env="lab"
+fi
+
+servera='servera'
+
+
+
+labname=role-review
+lab_dir="/home/student/${labname}"
+ansible_user=devops
+ansible_cfg="${lab_dir}/ansible.cfg"
+ansible_inventory="${lab_dir}/inventory"
+playbook="${lab_dir}/web_dev_server.yml"
+url='http://servera.lab.example.com'
+file_list='web_developers.yml developer.conf.j2 developer_tasks.yml selinux.yml'
+
+declare -a valid_commands=(setup grade cleanup)
+
+ansible_target='servera.lab.example.com'
+
+function lab_setup {
+  print_line
+  print_line "Setting up ${control_node} for lab ($labname):"
+  print_line
+
+  #From labtool.do407.shlib
+  #Check Ansible is installed.
+  setup_check_ansible workstation
+  setup_check_git workstation
+
+  #From labtool.do407.shlib
+  #Create working directory for lab artifacts.
+  setup_create_lab_dir $labname
+
+  #From labtool.do407.shlib
+  #Download Ansible Inventory
+  setup_download_inventory_file $labname
+
+  #From labtool.do407.shlib
+  #Download ansible.cfg
+  setup_download_ansible_cfg $labname
+
+  pad ' · Setting up a temporary Git repository'
+  run_a_playbook $labname setup_repo.yml
+
+  #from labtool.do407.shlib
+  #create_group_vars_dir $labname
+
+  print_line ' · Downloading additional lab files'
+  for fname in $file_list; do
+    pad "   · $fname"
+    _download_file $fname $labname
+  done
+
+}
+
+
+function clean_tmp_roles() {
+
+  for artifact in $( ls /tmp/$labname/roles | grep -v requirements.yml | grep -v apache.developer_configs); do
+     rm -Rf /tmp/$labname/roles/$artifact
+  done
+
+}
+
+install_role_dependencies() {
+   cur_dir=$(pwd)
+   cd /tmp/$labname
+   result=$(ansible-galaxy install -r roles/requirements.yml -p roles)
+   echo $result
+   if [ "$?" != "0" ]; then
+     print_FAIL
+     print_line '   · "ansible-galaxy install" failed.'
+     return
+   fi
+
+   second_test=$(echo -e "$result" | grep "infra.apache (v1.4) was installed successfully" | wc -l)
+   echo -e "Second Test: $second_test"
+   if [ "$second_test" != "1" ]; then
+     print_FAIL
+     print_line '   · wrong role name and/or version installed.'
+     return
+   fi
+
+   third_test=$(rpm -q rhel-system-roles)
+   echo -e "RHEL system roles test: $third_test"
+   if echo -e "$third_test" | grep "not installed" ; then
+     print_FAIL
+     print_line '   · RHEL system roles not present.'
+     return
+   fi
+
+
+   print_PASS
+}
+
+
+function check_play_requirements() {
+  local labname=$1
+  local playbook=$2
+  results=$(_print_play_names $labname $playbook | head -n 1 | grep "Configure Dev Web Server" | wc -l)
+  if [ "$results" != "1" ]; then
+    print_FAIL
+    print_line '   · Play "name" is incorrect.'
+    return
+  fi
+
+  #Implment other tests at a later point...
+
+  print_PASS
+}
+
+
+function lab_grade {
+
+
+  print_line
+  print_line "Grading prerequisites for $labname lab"
+  print_line " · Be patient with playbook steps."
+  print_line " · Some playbooks may take 1-2 minutes to complete."
+
+  pad ' · Create a temporary playbook project'
+  copy_work_dir $labname
+  print_SUCCESS
+
+  pad ' · Clean "roles" directory'
+  clean_tmp_roles
+  print_SUCCESS
+
+  pad ' · Running SELinux cleanup playbook'
+  run_a_playbook $labname selinux_cleanup.yml no_new_dir
+
+  pad ' · Running apache.developer_configs cleanup playbook'
+  run_a_playbook $labname developer_cleanup.yml no_new_dir
+
+  pad ' · Running apache cleanup playbook'
+  run_a_playbook $labname apache_cleanup.yml no_new_dir
+
+
+
+  host_reachable ${control_node}
+  print_line
+  print_line "Grading the student's work on ${control_node}:"
+  print_line
+
+  pad ' · Verify requirements.yml; install roles'
+  install_role_dependencies
+
+  pad ' · Check web_dev_servers.yml for requirements'
+  check_play_requirements $labname web_dev_server.yml
+
+  pad ' · Syntax check of web_dev_servers.yml'
+  _check_syntax $labname web_dev_server.yml pass_fail
+
+  pad ' · Run the web_dev_servers.yml playbook'
+  _run_playbook $labname web_dev_server.yml pass_fail
+
+  print_line ' · Check endpoints'
+  pad '   · servera'
+  check_http_endpoint servera pass_fail
+  pad '   · servera:9081'
+  check_http_endpoint servera:9081 pass_fail
+  pad '   · servera:9082'
+  check_http_endpoint servera:9082 pass_fail
+
+ 
+  #pad ' · web_dev_server.yml playbook exists'
+
+  #pad ' · role/requirements.yml exists'
+
+  #pad ' · ansible.cfg role_path is correct'
+
+  #pad ' · role/requirements.yml exists'
+
+  #pad ' · Installing dependencies using requirements.yml'
+
+
+  # Overall grade
+  print_line
+  pad 'Overall lab grade'
+  if [[ ${fail_count} -eq 0 ]]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  echo
+}
+
+function lab_cleanup {
+
+  host_reachable ${ansible_target}
+  print_line
+  print_line "Cleaning up ${ansible_target%%.*} after playbook:"
+  print_line
+
+  pad ' · Running SELinux cleanup playbook'
+  run_a_playbook $labname selinux_cleanup.yml
+
+  pad ' · Running apache.developer_configs cleanup playbook'
+  run_a_playbook $labname developer_cleanup.yml
+
+  pad ' · Running apache cleanup playbook'
+  run_a_playbook $labname apache_cleanup.yml
+
+
+  echo
+}
+
+
+function lab_reset {
+
+  lab_cleanup
+
+  echo
+  echo "Resetting the lab on ${control_node}:"
+  echo
+
+  pad " · Removing the lab files from ${control_node}"
+  cmd1="rm -f ${file_list}"
+  cmd2="rm -rf ${working_dir}"
+  if ${runuser} "${cmd1} && ${cmd2}" &> /dev/null
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  echo
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

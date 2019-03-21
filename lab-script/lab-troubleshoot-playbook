@@ -1,0 +1,115 @@
+#!/bin/bash
+#
+# Copyright 2016 Red Hat, Inc.
+#
+# NAME
+#     lab-troubleshoot-playbook - grading script for DO407 RHAE 2.7 Troubleshooting Playbook Guided Exercise
+#
+# SYNOPSIS
+#     lab-troubleshoot-playbook {setup|cleanup}
+#
+#        setup   - prepare the system for starting the lab
+#        cleanup - perform post-lab cleanup
+#
+# DESCRIPTION
+#     This script checks, in its setup verb, if the ansible package 
+#     has been installed, and creates the Ansible working directory.
+#
+# CHANGELOG
+#   * Mon Dec 10 2018 Victor Costea <vcostea@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+run_as_root='true'
+ssh='ssh -o StrictHostKeyChecking=no'
+scp='scp -q'
+target='workstation'
+
+labname=troubleshoot-playbook
+working_dir="/home/student/${labname}"
+ansible_inventory_file=inventory
+ansible_playbook_file=samba.yml
+ansible_j2_file=samba.conf.j2
+ansible_cfg_file=${working_dir}/ansible.cfg
+ansible_hst_file=${working_dir}/inventory
+ansible_user=devops
+ansible_target=servera.lab.example.com
+
+# This defines which subcommands are supported (solve, reset, etc.).
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(setup cleanup)
+
+function lab_setup {
+  reqd_package='ansible'
+
+  pad " . Checking ${ansible_target} availability:"
+  if host_reachable ${ansible_target}; then
+     print_SUCCESS
+  else
+     print_FAIL
+  fi
+
+  print_header "Setting up ${target} for guided exercise work:"
+
+  if ! rpm -q --quiet ${reqd_package}
+  then
+    pad " . Installing ${reqd_package} package on ${target}"
+    if yum -y install ansible &>/dev/null; then
+        print_SUCCESS
+    else
+        print_FAIL
+    fi
+  fi
+
+  pad " . Creating the working directory"
+  mkdir -p ${working_dir}
+  chown -R student. ${working_dir}
+  print_SUCCESS
+
+  pad " . Downloading ${ansible_inventory_file}"
+  if wget http://materials.example.com/labs/${labname}/${ansible_inventory_file} -O ${working_dir}/${ansible_inventory_file}; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad " . Downloading ${ansible_playbook_file}"
+  if wget http://materials.example.com/labs/${labname}/${ansible_playbook_file} -O ${working_dir}/${ansible_playbook_file}; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad " . Downloading ${ansible_j2_file}"
+  if wget http://materials.example.com/labs/${labname}/${ansible_j2_file} -O ${working_dir}/${ansible_j2_file}; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad " . Changing permissions to the working directory"
+  chown -R student. ${working_dir}
+  print_SUCCESS
+
+  print_line
+}
+
+function lab_cleanup {
+
+  print_header "Cleaning up the lab on ${target}:"
+  host_reachable ${target}
+  pad " . Cleaning exercise"
+  print_SUCCESS
+
+  print_line
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

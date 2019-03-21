@@ -1,0 +1,297 @@
+#
+# Copyright 2016 Red Hat, Inc.
+#
+# NAME
+#     labtool.do407.shlib - lab grading script do407 function library
+#
+# SYNOPSIS
+#     Add the following line at the top of your script:
+#
+#        source /path/to/labtool.do407.shlib
+#
+#     *after* the source of the generic labtool.shlib
+#
+# DESCRIPTION
+#
+# CHANGELOG
+#   * Thu Jan 21 2016 George Hacker <ghacker@redhat.com>
+#   - create template
+
+#########################################################################
+##########################################################################
+##                   How to use this template:
+##
+## 1. Rename the file to labtool.<platform>.shlib
+## 2. Adjust the comments above
+## 3. Add functions below here to override and/or supplement 
+##    labtool.shlib
+## 4. Remove these "How to use this template" comments
+##########################################################################
+##########################################################################
+
+function get_lab_dir() {
+  labname=$1
+  echo "/home/student/${labname}"
+}
+
+function _check_package() {
+  local target=$1
+  local reqd_package=$2
+  
+  if ! ${ssh} ${target} "rpm -q --quiet ${reqd_package}"
+  then
+    if ${ssh} ${target} "yum install -y ${reqd_package}" 
+    then
+     print_SUCCESS
+    else
+      print_FAIL
+    fi
+  else
+    print_SUCCESS
+  fi
+
+
+}
+
+function setup_check_ansible() {
+
+  local target=$1
+
+  # Check for lab prerequisites (perhaps a required package?).
+  pad ' · Verifying Ansible installation'
+  
+  _check_package $target ansible
+
+}
+
+function setup_check_git() {
+
+  local target=$1
+
+  # Check for lab prerequisites (perhaps a required package?).
+  pad ' · Verifying git installation'
+
+  _check_package $target git
+
+}
+
+function _check_syntax() {
+  local labname=$1
+  local playbook=$2
+  local flag=$3
+
+  cd /tmp/${labname}
+  sudo -u student ansible-playbook --syntax-check $playbook
+  if [ "$?" == "0" ]; then
+    if [ "$flag" == "" ]; then
+      print_SUCCESS
+    else
+      print_PASS
+    fi
+  else
+    print_FAIL
+  fi
+  cd -
+
+}
+
+
+
+function _run_playbook() {
+  local labname=$1
+  local playbook=$2
+  local flag=$3  
+
+  cd /tmp/${labname}
+  sudo -u student ansible-playbook $playbook
+  if [ "$?" == "0" ]; then
+    if [ "$flag" == "" ]; then
+      print_SUCCESS
+    else
+      print_PASS
+    fi
+  else
+    print_FAIL
+  fi
+  cd -
+}
+
+
+
+function run_a_playbook() {
+  local labname=$1
+  local playbook=$2
+  local new_wk_dir=$3
+  
+  if [ "$new_wk_dir" == "" ]; then
+    copy_work_dir $labname
+  fi
+
+  curl -o /tmp/${labname}/$playbook http://materials.example.com/labs/${labname}/${playbook}
+  
+  _run_playbook $1 $2
+}
+
+
+function run_student_playbook() {
+  local labname=$1
+  local playbook=$2
+
+  copy_work_dir $labname
+  
+  curl -o /tmp/${labname}/$playbook http://materials.example.com/labs/${labname}/${playbook}
+  
+  _run_playbook $1 $2
+}
+
+
+function copy_work_dir() {
+  local labname=$1
+  rm -R /tmp/${labname}
+  sudo -u student cp -R /home/student/${labname} /tmp/${labname}
+
+}
+
+function yaml_to_json() {
+  local labname=$1
+  local yaml_file=$2
+  #Test that file exists?
+  
+  #Print JSON to STDOUT
+  cat /home/student/$labname/$yaml_file | python -c 'import yaml,json,sys; print json.dumps(yaml.load(sys.stdin))'
+
+  #Use jq (?) to parse the json...
+  #Need JQ installed on the system...
+  # - will use python for now...
+}
+
+function _print_play_names() {
+  local labname=$1
+  local playbook=$2
+  
+  cat /home/student/$labname/$playbook | \
+    python -c 'import yaml,sys; print "\n".join([x.get("name","") for x in yaml.load(sys.stdin)])'
+}
+
+
+
+function setup_create_lab_dir() {
+  local labname=$1
+  local lab_dir=$(get_lab_dir $labname)
+  
+  pad ' · Creating working directory'
+  mkdir -p ${lab_dir}
+  chown -R student:student ${lab_dir}
+  print_SUCCESS
+
+}
+
+
+function _create_dir() {
+   local thisdir=$1
+   mkdir -p $thisdir
+   chown student:student $thisdir
+}
+
+function create_host_vars_dir() {
+    pad ' · Creating host_vars subdirectory'
+    local labname=$1
+    hostdir=/home/student/$labname/host_vars
+    if [ ! -d "$hostdir" ]; then
+      _create_dir $hostdir
+    fi
+    print_SUCCESS    
+}
+
+function create_roles_dir() {
+    pad ' · Creating roles subdirectory'
+    local labname=$1
+    grpdir=/home/student/$labname/roles
+    if [ ! -d "$grpdir" ]; then
+      _create_dir $grpdir
+    fi
+    print_SUCCESS
+
+}
+
+function create_group_vars_dir() {
+    pad ' · Creating group_vars subdirectory'
+    local labname=$1
+    grpdir=/home/student/$labname/group_vars
+    if [ ! -d "$grpdir" ]; then
+      _create_dir $grpdir
+    fi
+    print_SUCCESS
+}
+
+function check_http_endpoint() {
+  local url=$1
+  local flag=$2
+ 
+  http_status=$(curl -s -o /dev/null -w "%{http_code}" $1)
+  if [ $http_status == "200" ]; then
+    if [ "$flag" == "" ]; then
+      print_SUCCESS
+    else
+      print_PASS
+    fi
+  else
+    print_FAIL
+  fi
+}
+
+
+
+function _download_file() {
+  #Should be relative to lab directory.
+  local rel_file=$1
+  local labname=$2
+  
+  #Computed values
+  local url_file="/labs/${labname}/${rel_file}"
+  local full_file="/home/student/${labname}/${rel_file}"
+  local basedir=$(dirname $full_file)
+  
+  if [ ! -d $basedir ]; then
+    mkdir -p $basedir
+    chown -R student:student $basedir
+  fi
+
+  echo "curl http://materials.example.com${url_file} > ${full_file} "
+  http_status=$(curl -s -o /dev/null -w "%{http_code}" http://materials.example.com${url_file})
+  if [ $http_status == "200" ]; then
+    curl -o ${full_file} http://materials.example.com${url_file} 
+    chown student:student ${full_file}
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+}
+
+function setup_download_inventory_file() {
+  local labname=$1
+  local lab_dir=$(get_lab_dir $labname)
+  local lab_file="inventory"
+  
+  pad ' · Deploying Ansible inventory'
+  _download_file $lab_file $labname
+
+}
+
+function setup_download_ansible_cfg() {
+  local labname=$1
+  local lab_dir=$(get_lab_dir $labname)
+  local lab_file="ansible.cfg"
+
+  pad ' · Deploying ansible.cfg'
+  _download_file $lab_file $labname
+
+}
+
+
+
+
+
+
+# vim: ts=4 sw=2

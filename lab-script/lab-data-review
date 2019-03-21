@@ -1,0 +1,214 @@
+#!/bin/bash
+#
+# Copyright 2016 Red Hat, Inc.
+#
+# NAME
+#     lab-data-review - GE script for DO407
+#
+# SYNOPSIS
+#     lab-data-review {setup|cleanup|grade}
+#
+#        setup   - prepare the system for starting the lab
+#        cleanup - perform post-lab cleanup (not comprehensive like reset)
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does setup or 
+#     cleanup for the lab for managing tasks flow.
+#
+# CHANGELOG
+#   * Thu Nov 22 2018 Chen Chang <cchang@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+run_as_root='true'
+runuser='runuser student -c'
+
+control_node='workstation'
+
+# Conditional to make the script compatible with the
+# demo version.
+if [[ ${lab_demo_mode} == "demo" ]]; then
+  env="demo"
+else
+  env="dev"
+fi
+
+
+labname=data-review
+lab_dir="/home/student/${labname}"
+ansible_cfg="${lab_dir}/ansible.cfg"
+ansible_inventory="${lab_dir}/inventory"
+playbook="${lab_dir}/playbook.yml"
+url='http://serverb.lab.example.com'
+
+ansible_cfg_file=${lab_dir}/ansible.cfg
+ansible_hst_file=${lab_dir}/inventory
+ansible_playbook_file=${lab_dir}/playbook.yml
+ansible_user=devops
+ansible_target=serverb.lab.example.com
+ansible_pkgs=(httpd python-passlib mod_ssl)
+
+# This defines which subcommands are supported (solve, reset, etc.).
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(setup cleanup grade)
+
+function lab_setup {
+
+  #From labtool.do407.shlib
+  #Check Ansible is installed.
+  setup_check_ansible workstation
+
+  #From labtool.do407.shlib
+  #Create working directory for lab artifacts.
+  setup_create_lab_dir $labname
+
+  #From labtool.do407.shlib
+  #Download Ansible Inventory
+  setup_download_inventory_file $labname
+
+  #From labtool.do407.shlib
+  #Download ansible.cfg
+  setup_download_ansible_cfg $labname
+
+  #from labtool.do407.shlib
+  #create_group_vars_dir $labname
+
+  pad ' · Downloading files/htaccess file'
+  _download_file files/htaccess $labname
+
+  pad ' · Renaming files/htaccess file'
+  if mv ${lab_dir}/files/htaccess ${lab_dir}/files/.htaccess; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad ' · Downloading files/httpd.conf file'
+  _download_file files/httpd.conf $labname
+
+  echo
+}
+
+
+function lab_cleanup {
+
+  host_reachable ${ansible_target}
+  echo
+  echo "Cleaning up the lab on ${ansible_target}:"
+  echo
+
+  pad  " · Removing /etc/httpd/secrets"
+  if ${ssh} ${ansible_target} 'rm -rf /etc/httpd/secrets' &>/dev/null; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad  " · Removing /etc/httpd/conf/httpd.conf"
+  if ${ssh} ${ansible_target} 'rm -f /etc/httpd/conf/httpd.conf' &>/dev/null; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad  " · Removing /var/www/html/.htaccess"
+  if ${ssh} ${ansible_target} 'rm -f /var/www/html/.htaccess' &>/dev/null; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad  " · Removing /var/www/html/index.html"
+  if ${ssh} ${ansible_target} 'rm -f /var/www/html/index.html' &>/dev/null; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  for i in "${ansible_pkgs[@]}"; do
+    pad " · Removing $i"
+    if ${ssh} ${ansible_target} yum -y remove "$i" &>/dev/null; then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  done
+
+  echo
+
+}
+
+function lab_grade {
+
+  host_reachable ${ansible_target}
+
+  print_header "Grading the student's work on ${control_node}:"
+
+
+  pad " · Ensuring Ansible playbook is present"
+  if [[ -f ${ansible_playbook_file} ]]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  print_header "Grading the student's work on ${ansible_target}:"
+
+
+  print_line " · Checking packages"
+
+  for i in "${ansible_pkgs[@]}"; do
+    pad "   · Checking $i"
+    if ${ssh} ${ansible_target} rpm -q --quiet "$i"; then
+      print_PASS
+    else
+      print_FAIL
+    fi
+  done
+
+  print_line " · Ensuring services are started"
+  daemons=(httpd firewalld)
+  for i in "${daemons[@]}"; do
+    pad "   · Checking $i"
+    if ${ssh} ${ansible_target} systemctl is-active $i &>/dev/null; then
+      print_PASS
+    else
+      print_FAIL
+    fi
+  done
+
+
+  echo
+
+  pad " · Ensuring the web server is reachable"
+  if curl --silent -k https://${ansible_target} -u guest:redhat | grep -q "^serverb.lab.example.com (172.25.250.11) has been customized by Ansible."; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  print_line
+
+  # Overall grade
+  echo
+  pad 'Overall lab grade'
+  if [[ ${fail_count} -eq 0 ]]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  echo
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

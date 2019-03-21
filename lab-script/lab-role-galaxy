@@ -1,0 +1,239 @@
+#!/bin/bash
+#
+# Copyright 2016 Red Hat, Inc.
+#
+# NAME
+#     lab-role-galaxy - setup script for DO407 roles practice exercise
+#
+# SYNOPSIS
+#     lab-ansible-galaxy {setup|cleanup}
+#
+#        setup   - create working directory with inventory and templates
+#        cleanup - remove changes applied to managed hosts
+#
+# DESCRIPTION
+#     This script is used to confirm if a student has created a file
+#     to use with ansible-galaxy to download and install a role. A
+#     playbook should exist that applies the role to servera. Finally,
+#     the student should have used ansible-galaxy to create an empty
+#     role for their own future development.
+#
+# CHANGELOG
+#   * Wed Nov 21 2018 Dan Kolepp <dkolepp@redhat.com>
+#   - only setup/cleanup verbs supported; all else removed.
+#   - renamed script from lab-ansible-galaxy to lab-role-galaxy
+#   - updated setup function with functions from do407 shlib
+#   * Mon Jun 26 2017 Artur Glogowski <aglogows@redhat.com>
+#   - removed patch/restore of ansible-galaxy
+#   - added fix for missing directories in ansible-galaxy skeleton
+#   - added check for subdirectories in roles directory
+#   * Wed May 18 2016 George Hacker <ghacker@redhat.com>
+#   - lab_setup provides student with a working config and inventory
+#   * Thu May  5 2016 George Hacker <ghacker@redhat.com>
+#   - added code to patch/restore ansible-galaxy
+#   * Fri Apr 15 2016 George Hacker <ghacker@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+run_as_root='true'
+runuser='runuser student -c'
+
+control_node='workstation'
+
+# Conditional to make the script compatible with the
+# demo version.
+if [[ ${lab_demo_mode} == "demo" ]]; then
+  env="demo"
+else
+  env="dev"
+fi
+
+labname="role-galaxy"
+working_dir="/home/student/${labname}"
+ansible_cfg_file="${working_dir}/ansible.cfg"
+ansible_hst_file="${working_dir}/inventory"
+ansible_playbook_file="${working_dir}/use-bash_env-role.yml"
+install_roles_file="${working_dir}/install-roles.yml"
+ansible_user='devops'
+ansible_target='servera.lab.example.com'
+
+materials='http://materials.example.com'
+role_src='roles-library/student.bash_env.tgz'
+
+declare -a valid_commands=(setup cleanup)
+
+function lab_setup {
+
+
+  print_line
+  print_line "Setting up ${control_node} for Guided Exercise ($labname):"
+  print_line
+
+  #From labtool.do407.shlib
+  #Check Ansible is installed.
+  setup_check_ansible workstation
+  setup_check_git workstation
+
+  #From labtool.do407.shlib
+  #Create working directory for lab artifacts.
+  setup_create_lab_dir $labname
+
+  #From labtool.do407.shlib
+  #Download Ansible Inventory
+  setup_download_inventory_file $labname
+
+  #From labtool.do407.shlib
+  #Download ansible.cfg
+  setup_download_ansible_cfg $labname
+
+  #From labtool.do407.shlib
+  #Create the "roles" directory for a playbook project.
+  create_roles_dir $labname
+
+  #Setup a Git Repo for the GE on workstation
+  pad ' · Setting up a temporary Git repository'
+  run_a_playbook $labname setup_repo.yml
+
+}
+
+
+function lab_cleanup {
+
+  host_reachable ${ansible_target}
+  print_line
+  print_line "Cleaning up after student.bash_env role on ${ansible_target%%.*}:"
+  print_line
+
+  pad ' · Restoring /etc/skel files'
+  cmd1='rm -f /etc/skel/{.bash_profile,.bashrc,.vimrc}'
+  cmd2='yum -y reinstall bash'
+  if ${ssh} ${ansible_target} "${cmd1} && ${cmd2}" &> /dev/null
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+  
+  
+  pad ' · Removing student2 user and temporary git repository'
+  run_a_playbook $labname cleanup.yml
+
+  echo
+}
+
+function lab_solve {
+
+  lab_reset
+  lab_setup
+
+  echo
+  echo "Solving the lab on ${control_node}:"
+  echo
+
+  pad " · Changing into working directory"
+  if cd ${working_dir} &> /dev/null
+  then
+    print_SUCCESS
+    pad " · Creating ${install_roles_file##*/}"
+    cat << EOF > /tmp/tmpfile
+---
+# ${install_roles_file##*/}
+
+- src: ${materials}/${role_src}
+  name: student.bash_env
+EOF
+    cmd1="cat > ${install_roles_file}"
+    if cat /tmp/tmpfile | ${runuser} "${cmd1}" &> /dev/null
+    then
+      print_SUCCESS
+      pad " · Using ansible-galaxy install on ${install_roles_file##*/}"
+      cmd1="ansible-galaxy install -p roles -r ${install_roles_file}"
+      if ${runuser} "${cmd1}" &> /dev/null
+      then
+	print_SUCCESS
+	pad " · Creating ${ansible_playbook_file##*/} playbook"
+	cat <<\EOF > /tmp/tmpfile
+---
+- name: use student.bash_env role playbook
+  hosts: webservers
+  user: devops
+  become: true
+
+  roles:
+    - student.bash_env
+EOF
+	cmd1="cat > ${ansible_playbook_file}"
+	if cat /tmp/tmpfile | ${runuser} "${cmd1}" &> /dev/null
+	then
+	  print_SUCCESS
+	  pad " · Running playbook"
+	  cmd1="ansible-playbook ${ansible_playbook_file}"
+	  if ${runuser} "${cmd1}" &> /dev/null
+	  then
+	    print_SUCCESS
+	  else
+	    print_FAIL
+	  fi
+	else
+	  print_FAIL
+	fi
+      else
+	print_FAIL
+      fi
+    else
+      print_FAIL
+    fi
+    pad ' · Creating empty.example role'
+    cmd1='ansible-galaxy init -p roles empty.example'
+    if ${runuser} "${cmd1}" &> /dev/null
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  else
+    print_FAIL
+  fi
+
+  echo
+}
+
+function lab_reset {
+
+  lab_cleanup
+
+  echo
+  echo "Resetting the lab on ${control_node}:"
+  echo
+
+  pad " · Changing into working directory"
+  if cd ${working_dir} &> /dev/null
+  then
+    print_SUCCESS
+    pad " · Removing the lab files"
+    cmd1="rm -f ${install_roles_file} ${ansible_playbook_file}"
+    cmd2="rm -rf roles/{empty.example,student.bash_env}"
+    if ${runuser} "${cmd1} && ${cmd2}" &> /dev/null
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  else
+    print_FAIL
+  fi
+
+ # patch_ansible_galaxy --reverse
+
+  echo
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

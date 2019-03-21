@@ -1,0 +1,111 @@
+#!/bin/bash
+#
+# Copyright 2018 Red Hat, Inc.
+#
+# NAME
+#     lab-role-system - grading script for DO407 RHEL system roles exercise
+#
+# SYNOPSIS
+#     lab-role-system {setup|cleanup}
+#
+#        setup   - create working directory with inventory and templates
+#        cleanup - remove changes applied to managed hosts
+#
+# DESCRIPTION
+#   This lab script is used to setup the guided exercise to configure
+#   NTP on hosts using the RHEL system roles.
+#   
+#
+# CHANGELOG
+#   * Tue Nov 27 2018 Dan Kolepp <dkolepp@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+run_as_root='true'
+runuser='runuser student -c'
+
+control_node='workstation'
+
+# Conditional to make the script compatible with the
+# demo version.
+if [[ ${lab_demo_mode} == "demo" ]]; then
+  env="demo"
+else
+  env="dev"
+fi
+
+labname="role-system"
+working_dir="/home/student/${labname}"
+ansible_cfg_file=${working_dir}/ansible.cfg
+ansible_hst_file=${working_dir}/inventory
+ansible_playbook_file=${working_dir}/use-vhost-role.yml
+ansible_user=devops
+ansible_target=servera.lab.example.com
+
+file_list='roles/requirements.yml'
+
+declare -a valid_commands=(setup cleanup)
+
+function lab_setup {
+
+  print_line
+  print_line "Setting up ${control_node} for Guided Exercise ($labname):"
+  print_line
+
+  #From labtool.do407.shlib
+  #Check Ansible is installed.
+  setup_check_ansible workstation
+
+  #This needs to be removed in future versions of this course.
+  # * See DO407-448
+  #Verify SELinux context for /etc
+  pad ' · Ensure SELinux context on remote hosts'
+  run_a_playbook $labname selinux_fix.yml copy_work_dir
+ 
+
+  #From labtool.do407.shlib
+  #Create working directory for lab artifacts.
+  setup_create_lab_dir $labname
+
+  #From labtool.do407.shlib
+  #Download Ansible Inventory
+  setup_download_inventory_file $labname
+
+  #From labtool.do407.shlib
+  #Download ansible.cfg
+  setup_download_ansible_cfg $labname
+
+  for file in ${file_list}
+  do
+      pad " · Downloading $file file"
+      _download_file $file $labname
+  done
+
+  echo
+}
+
+
+function lab_cleanup {
+
+  print_line
+  print_line "Cleaning up for Guided Exercise ($labname):"
+  print_line
+
+  host_reachable ${ansible_target}
+
+  pad ' · Resetting timezone and chronyd (~20-40 seconds)'
+  run_a_playbook $labname cleanup.yml
+
+  echo
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

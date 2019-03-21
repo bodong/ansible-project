@@ -1,0 +1,127 @@
+#!/bin/bash
+#
+# Copyright 2018 Red Hat, Inc.
+#
+# NAME
+#     lab-projects-file - grading script for DO407
+#
+# SYNOPSIS
+#     lab-projects-file {setup | cleanup}
+#
+#        setup   - prepare the system for starting the lab
+#        cleanup - perform post-lab cleanup
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does setup or
+#     cleanup for a DO407 lab.
+#
+# CHANGELOG
+#   * Mon Dec 10 2018 Chen Chang <cchang@redhat.com>
+#   - Update for 2.7 release
+#   * Wed Oct 24 2018 Victor Costea <vcostea@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+labname='projects-file'
+run_as_root='true'
+target='workstation'
+targeta='servera'
+working_dir=/home/student/${labname}
+task_dir=${working_dir}/tasks
+play_dir=${working_dir}/plays
+
+# This defines which subcommands are supported (setup, grade, etc.).
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(setup cleanup)
+
+function lab_setup {
+
+  control_node=${target}
+
+  print_header "Setting up ${control_node} for lab exercise work:"
+
+  #From labtool.do407.shlib
+  #Check Ansible is installed.
+  setup_check_ansible ${target}
+
+  #From labtool.do407.shlib
+  #Create working directory for lab artifacts.
+  setup_create_lab_dir $labname
+
+  #From labtool.do407.shlib
+  #Download ansible.cfg
+  setup_download_ansible_cfg $labname
+
+  #From labtool.do407.shlib
+  #Download Ansible Inventory
+  setup_download_inventory_file $labname
+
+  pad ' · Creating task directory'
+  mkdir -p ${task_dir}
+  chown -R student. ${task_dir}
+  print_SUCCESS
+               
+  pad ' · Deploying environment task files'
+  ##From labtool.do407.shlib
+  _download_file tasks/environment.yml $labname
+
+  pad ' · Deploying firewall task files'
+  ##From labtool.do407.shlib
+  _download_file tasks/firewall.yml $labname
+
+  pad ' · Deploying placeholder task files'
+  ##From labtool.do407.shlib
+  _download_file tasks/placeholder.yml $labname
+
+  pad ' · Creating play directory'
+  mkdir -p ${play_dir}
+  chown -R student. ${play_dir}
+  print_SUCCESS
+
+  pad ' · Deploying play files'
+  ##From labtool.do407.shlib
+  _download_file plays/test.yml $labname
+
+  print_line
+}
+
+function lab_cleanup {
+
+  target=${targeta}
+
+  echo
+  echo "Cleaning up the lab on ${target}:"
+  echo
+  host_reachable ${target}
+
+  print_line "Cleanup" 
+  pad " · Remove firewall configuration"
+  cmd1="firewall-cmd --remove-service http --permanent"
+  cmd2="firewall-cmd --reload"
+  ${ssh} ${target} "${cmd1} && ${cmd2}"
+  print_SUCCESS
+
+
+  pad " · Remove web content"
+  cmd1="rm -f /var/www/html/index.html"
+  ${ssh} ${target} ${cmd1}
+  print_SUCCESS
+
+
+  pad " · Remove httpd package"
+  cmd1="yum remove -y httpd"
+  ${ssh} ${target} ${cmd1} &> /dev/null
+  print_SUCCESS
+
+  print_line
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

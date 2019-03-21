@@ -1,0 +1,128 @@
+#!/bin/bash
+#
+# Copyright 2016 Red Hat, Inc.
+#
+# NAME
+#     lab-deploy-adhoc - grading script for DO407 adhoc practice
+#
+# SYNOPSIS
+#     lab-deploy-adhoc {setup|cleanup}
+#
+#        setup   - prepare the system for starting the practice exercise
+#        cleanup - perform post-lab cleanup
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does setup, or
+#     cleanup for the deploy adhoc guided exercise.
+#
+# CHANGELOG
+#   * Thu Nov  1 2018 Victor Costea <vcostea@redhat.com>
+#   - Update script for Ansible 2.7 course.
+#   - Renamed original adhoc to deploy-adhoc
+#   * Mon May 16 2016 Chen Chang <cchang@redhat.com>
+#   - Changes to accomodate new directory structure.
+#   * Mon May  2 2016 George Hacker <ghacker@redhat.com>
+#   - Changed print_SUCCESS to print_PASS in lab_grade function
+#   * Sun Apr  3 12:51:14 EDT 2016 Chen Chang <cchang@redhat.com>
+#   - New script
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+run_as_root='true'
+targetw='workstation'
+targeta='servera'
+targetb='serverb'
+
+labname='deploy-adhoc'
+student_home_dir='/home/student'
+lab_dir="${student_home_dir}/${labname}"
+lab_cfg="${labname}/ansible.cfg"
+lab_inv="${labname}/inventory"
+
+# This defines which subcommands are supported (solve, reset, etc.).
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(setup cleanup)
+
+function lab_setup {
+
+  control_node=${targetw}
+  target=${targetw}
+
+  # Check for lab prerequisites (perhaps a required package?).
+
+  reqd_package='ansible'
+
+  print_header "Setting up ${control_node} for lab exercise work:"
+  host_reachable ${control_node}
+
+  pad " · ${reqd_package} package is installed on ${control_node}"
+  if rpm -q --quiet ${reqd_package}
+  then
+    print_SUCCESS
+  else
+    if yum install -y ${reqd_package} &> /dev/null
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  pad " · Create exercise directory"
+  if ! [ -d "${lab_dir}" ]; then
+    mkdir ${lab_dir}
+    chown student.student ${lab_dir}
+    print_SUCCESS
+  elif [ -d "${lab_dir}" ]; then
+      print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+
+  pad " · Download Ansible configuration"
+  cmd1="curl http://materials.example.com/labs/${lab_cfg} > ${lab_cfg}"
+  if su - student -c "${ssh} ${target} '${cmd1}'" &> /dev/null
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi 
+
+  pad " · Download Ansible inventory"
+  cmd1="curl http://materials.example.com/labs/${lab_inv} > ${lab_inv}"
+  if su - student -c "${ssh} ${target} '${cmd1}'" &> /dev/null
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi 
+
+  print_line
+}
+
+function lab_cleanup {
+
+  target=${targetw}
+
+  print_header "Cleaning up the lab on ${targetw}:"
+
+  pad ' · Restore /etc/motd'
+
+  cmd1="ansible -i ${lab_inv} localhost,servera.lab.example.com -m shell -a '> /etc/motd' -u devops -b --become-user root"
+
+  su -  student -c "${ssh} ${target} \"${cmd1}\"" &> /dev/null
+  print_SUCCESS
+
+  print_line
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

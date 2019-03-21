@@ -1,0 +1,91 @@
+#!/bin/bash
+#
+# Copyright 2016 Red Hat, Inc.
+#
+# NAME
+#     lab-deploy-manage - grading script for DO407 manage practice
+#
+# SYNOPSIS
+#     lab-deploy-manage {setup|cleanup}
+#
+#        setup   - prepare the system for starting the practice exercise
+#        cleanup - perform post-lab cleanup
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does setup, or
+#     cleanup for the deploy manage practice exercise.
+#
+# CHANGELOG
+#   * Tue Oct 30 2018 Victor Costea <vcostea@redhat.com>
+#   - Changes to accomodate Ansible 2.7 refresh.
+#   - Per new grading script standards, remove solve, grade, and reset
+#   * Mon May 16 2016 Chen Chang <cchang@redhat.com>
+#   - Changes to accomodate new directory structure.
+#   * Mon May  2 2016 George Hacker <ghacker@redhat.com>
+#   - Changed print_SUCCESS to print_PASS in lab_grade function
+#   * Sun Apr  3 12:51:14 EDT 2016 Chen Chang <cchang@redhat.com>
+#   - New script
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+run_as_root='true'
+targetw='workstation'
+targeta='servera'
+targetb='serverb'
+
+labname=manage
+
+lab_dir='/home/student/dep-manage'
+student_ansible_cfg="${lab_dir}/ansible.cfg"
+student_ansible_hosts="${lab_dir}/inventory"
+
+# This defines which subcommands are supported (solve, reset, etc.).
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(setup cleanup)
+
+
+function lab_setup {
+
+  control_node=${targetw}
+  reqd_package='ansible'
+
+  print_header "Setting up ${control_node} for lab exercise work:"
+  host_reachable ${control_node}
+
+  # Check for lab prerequisites.
+  pad " · ${reqd_package} package is installed on ${control_node}"
+  if rpm -q --quiet ${reqd_package}
+  then
+    print_SUCCESS
+  else
+    if yum install -y ${reqd_package} &> /dev/null
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  print_line
+}
+
+function lab_cleanup {
+
+  target=${targetw}
+
+  print_header "Cleaning up lab exercise work:"
+  pad  " . Cleaning ${targetw}:"
+  print_SUCCESS
+
+  print_line
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

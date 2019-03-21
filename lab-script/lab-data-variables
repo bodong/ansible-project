@@ -1,0 +1,129 @@
+#!/bin/bash
+#
+# Copyright 2016 Red Hat, Inc.
+#
+# NAME
+#     lab-data-variables - grading script for DO407
+#
+# SYNOPSIS
+#     lab-data-variables {setup|cleanup}
+#
+#        setup   - prepare the system for starting the lab
+#        cleanup - perform post-lab cleanup (not comprehensive like reset)
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does setup, 
+#     or cleanup for the lab for managing playbooks variables.
+#
+# CHANGELOG
+#   * Nov 2 2018 Chen Chang <cchang@redhat.com>
+#   - Updated for Ansible 2.7 release
+#   * Wed Jun 21 2017 Artur Glogowski <aglogows@redhat.com>
+#   - modified become method for localhost and removed localhost from inventory
+#   * Wed Jun  8 2016 Chen Chang <cchang@redhat.com>
+#   - added localhost to inventory to avoid implicit localhost
+#   * Mon May 16 2016 George Hacker <ghacker@redhat.com>
+#   - playbook now checks web content from localhost
+#   - removed loops from playbook
+#   - lab_cleanup no longer removes the student's work
+#   - lab_setup provides student work a working config and inventory
+#   - changed pkg parameter for yum module to name
+#   * Wed May 4 2016 Razique Mahroua <rmahroua@redhat.com>
+#   - quickfix (cleaning up /var/www/html + changes package name)
+#   * Wed Apr 13 2016 Razique Mahroua <rmahroua@redhat.com>
+#   - quickfix to match the book
+#   * Tue Mar 29 2016 Razique Mahroua <rmahroua@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Initialize and set some variables
+run_as_root='true'
+
+control_node='workstation'
+
+# Conditional to make the script compatible with the
+# demo version.
+if [[ ${lab_demo_mode} == "demo" ]]; then
+  env="demo"
+else
+  env="dev"
+fi
+
+labname=data-variables
+working_dir="/home/student/${labname}"
+ansible_cfg_file=${working_dir}/ansible.cfg
+ansible_hst_file=${working_dir}/inventory
+ansible_playbook_file=${working_dir}/playbook.yml
+ansible_user=devops
+ansible_target=servera.lab.example.com
+ansible_pkgs=(httpd firewalld python-httplib2)
+ansible_pkgs2=(httpd python-httplib2)
+
+# This defines which subcommands are supported (solve, reset, etc.).
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(setup grade cleanup solve reset)
+
+function lab_setup {
+
+  host_reachable ${control_node}
+  print_header "Setting up ${control_node} for lab exercise work:"
+
+  setup_check_ansible workstation
+  setup_create_lab_dir $labname
+
+  pad " . Creating Ansible files"
+
+  cat << EOF > ${ansible_cfg_file}
+[defaults]
+inventory   = ${ansible_hst_file##*/}
+remote_user = ${ansible_user}
+
+[privilege_escalation]
+become      = true
+EOF
+
+  cat << EOF > ${ansible_hst_file}
+
+[webserver]
+${ansible_target}
+EOF
+
+  chown -R student. ${working_dir}
+  print_SUCCESS
+
+  print_line
+}
+
+function lab_cleanup {
+
+  host_reachable ${ansible_target}
+  print_header "Cleaning up the lab on ${ansible_target}:"
+
+  print_line " · Removing packages"
+  for i in "${ansible_pkgs2[@]}"; do
+    pad "   · Removing $i"
+    if ${ssh} ${ansible_target} yum -y remove "$i"; then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  done
+  pad " · Cleaning the web directory "
+  if ${ssh} ${ansible_target} "rm -rf /var/www/html/*"; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  print_line
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"
